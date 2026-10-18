@@ -1,0 +1,12 @@
+# Generated .NET build files
+bin/
+obj/
+# Local database and journal files
+*.db
+*.db-shm
+*.db-wal
+# OS/editor files
+.DS_Store
+.vs/
+.vscode/
+.env

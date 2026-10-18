@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>IT Operations Analytics</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+  <style>
+    :root {font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#e8eef9;background:#0d1525;}
+    * {box-sizing:border-box} body {margin:0} main {max-width:1150px;margin:0 auto;padding:38px 22px 60px}
+    header {display:flex;align-items:start;justify-content:space-between;gap:18px;margin-bottom:30px}
+    h1 {font-size:clamp(26px,4vw,38px);line-height:1.1;margin:8px 0 10px;letter-spacing:-1px}
+    h2 {font-size:16px;margin:0 0 18px}
+    p {color:#9caecc;margin:0}.eyebrow {text-transform:uppercase;font-size:12px;letter-spacing:1.8px;color:#78b7ff;font-weight:750}
+    .tag {font-size:12px;white-space:nowrap;border:1px solid #334867;border-radius:18px;color:#b7c8e4;padding:7px 11px}
+    .metrics {display:grid;grid-template-columns:repeat(3,1fr);gap:15px;margin-bottom:18px}
+    .panel {background:#172339;border:1px solid #2e405b;border-radius:16px;padding:20px;box-shadow:0 12px 35px #040b1833}
+    .metric .label {font-size:13px;color:#a7b8d0}.metric .value {font-size:34px;font-weight:780;margin:12px 0 0}
+    .charts {display:grid;grid-template-columns:1.35fr 1fr;gap:18px;margin-bottom:18px}
+    .chart-wrap {position:relative;height:260px}
+    .filters {display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+    label {font-size:13px;color:#b6c5de} select {background:#0f1a2d;border:1px solid #3a4b65;color:#eef3fb;padding:9px 12px;border-radius:9px;min-width:150px}
+    .scroll {overflow:auto} table {width:100%;border-collapse:collapse;text-align:left;min-width:650px}
+    th,td {padding:12px 10px;border-bottom:1px solid #2e405b;font-size:13px}th {color:#b9c8dc;font-weight:650}
+    tbody tr:hover {background:#22314a}.status {border-radius:8px;padding:4px 7px;background:#30425b;display:inline-block}
+    .status.resolved {color:#a9efce;background:#1c4a41}.status.open {color:#f5d69d;background:#553f27}
+    .footer {font-size:12px;margin-top:18px;color:#97abc6}.error {color:#ffb6b6;font-size:13px}
+    @media (max-width:760px) {.metrics,.charts {grid-template-columns:1fr}header {flex-direction:column}.metric .value {font-size:30px}}
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <div class="eyebrow">IT Support · Operations Intelligence</div>
+        <h1>IT Operations Analytics</h1>
+        <p>C# / ASP.NET Core API · SQLite · Chart.js</p>
+      </div>
+      <div class="tag">Synthetic demo data</div>
+    </header>
+    <div id="error" class="error" role="alert"></div>
+    <section class="metrics">
+      <div class="panel metric"><div class="label">Total tickets</div><div class="value" id="total">—</div></div>
+      <div class="panel metric"><div class="label">Open tickets</div><div class="value" id="open">—</div></div>
+      <div class="panel metric"><div class="label">Resolved tickets</div><div class="value" id="resolved">—</div></div>
+    </section>
+    <section class="charts">
+      <div class="panel"><h2>Tickets by category</h2><div class="chart-wrap"><canvas id="categoryChart" aria-label="Ticket categories"></canvas></div></div>
+      <div class="panel"><h2>Tickets by status</h2><div class="chart-wrap"><canvas id="statusChart" aria-label="Ticket statuses"></canvas></div></div>
+    </section>
+    <section class="panel">
+      <h2>Recent support requests</h2>
+      <div class="filters">
+        <label for="categoryFilter">Category</label>
+        <select id="categoryFilter"><option value="">All categories</option></select>
+        <label for="statusFilter">Status</label>
+        <select id="statusFilter">
+          <option value="">All statuses</option>
+          <option value="Open">Open</option>
+          <option value="In Progress">In Progress</option>
+          <option value="Resolved">Resolved</option>
+        </select>
+      </div>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>ID</th><th>Issue</th><th>Category</th><th>Status</th><th>Created (UTC)</th></tr></thead>
+          <tbody id="ticketRows"></tbody>
+        </table>
+      </div>
+    </section>
+    <p class="footer">Demo data is generated in the local SQLite database on first launch. No real support tickets or personal information are used.</p>
+  </main>
+  <script>
+    const byId = (id) => document.getElementById(id);
+    const chartColors = ['#54b8f2','#68d6c4','#9993f7','#f2bf70','#ed83ae','#a6cf84','#86a9db'];
+    Chart.defaults.color = '#b8c9df';
+    Chart.defaults.borderColor = '#31435b';
+
+    async function loadSummary() {
+      const response = await fetch('/api/summary');
+      if (!response.ok) throw new Error('Could not load summary');
+      const stats = await response.json();
+      byId('total').textContent = stats.totalTickets;
+      byId('open').textContent = stats.openTickets;
+      byId('resolved').textContent = stats.resolvedTickets;
+      const categorySelect = byId('categoryFilter');
+      stats.categories.forEach(({category}) => {
+        const option = document.createElement('option');
+        option.value = category;
+        option.textContent = category;
+        categorySelect.append(option);
+      });
+
+      new Chart(byId('categoryChart'), {
+        type:'bar',
+        data: {
+          labels:stats.categories.map(item => item.category),
+          datasets:[{label:'Tickets',data:stats.categories.map(item => item.count),backgroundColor:chartColors,borderRadius:6}]
+        },
+        options: {responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{precision:0}},x:{ticks:{maxRotation:40,minRotation:20}}}}
+      });
+      new Chart(byId('statusChart'), {
+        type:'doughnut',
+        data:{labels:stats.statuses.map(item=>item.status),datasets:[{data:stats.statuses.map(item=>item.count),backgroundColor:chartColors,borderWidth:0}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom'}}}
+      });
+    }
+
+    async function loadTickets() {
+      const params = new URLSearchParams();
+      if (byId('categoryFilter').value) params.set('category',byId('categoryFilter').value);
+      if (byId('statusFilter').value) params.set('status',byId('statusFilter').value);
+      const response = await fetch('/api/tickets?' + params.toString());
+      if (!response.ok) throw new Error('Could not load tickets');
+      const tickets = await response.json();
+      const body = byId('ticketRows');
+      body.replaceChildren();
+      tickets.forEach(ticket => {
+        const row = document.createElement('tr');
+        [ticket.id,ticket.title,ticket.category].forEach(value => {
+          const cell = document.createElement('td');
+          cell.textContent = String(value);
+          row.append(cell);
+        });
+        const statusCell = document.createElement('td');
+        const badge = document.createElement('span');
+        badge.className = 'status ' + ticket.status.toLowerCase().replaceAll(' ','-');
+        badge.textContent = ticket.status;
+        statusCell.append(badge);
+        row.append(statusCell);
+        const dateCell = document.createElement('td');
+        dateCell.textContent = ticket.createdAt.slice(0,10);
+        row.append(dateCell);
+        body.append(row);
+      });
+      if (!tickets.length) {
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 5;
+        cell.textContent = 'No tickets match these filters.';
+        row.append(cell);
+        body.append(row);
+      }
+    }
+
+    async function start() {
+      try {
+        await loadSummary();
+        await loadTickets();
+      } catch (error) {
+        byId('error').textContent = error.message + '. Check the Terminal for errors.';
+      }
+    }
+    byId('categoryFilter').addEventListener('change',loadTickets);
+    byId('statusFilter').addEventListener('change',loadTickets);
+    start();
+  </script>
+</body>
+</html>
